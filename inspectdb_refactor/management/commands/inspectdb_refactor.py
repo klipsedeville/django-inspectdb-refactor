@@ -19,14 +19,20 @@ class Command(InspectbCommand):
         "No app label provided. Please provide app label for path."
     )
 
-    def _table2model(self, table_name):
-        return re.sub(r'[^a-zA-Z0-9]', '', table_name.title())
+    def _table2model(self, table_name, table_prefix=""):
+        print(table_name.title())
+        return re.sub(r'[^a-zA-Z0-9]', '', table_name.title().replace(table_prefix.capitalize(), ""))
 
     def add_arguments(self, parser):
         super(Command, self).add_arguments(parser)
         parser.add_argument(
             '--app', action='store', dest='app',
             help='Needs app lablel to identify path to create modules.',
+        )
+
+        parser.add_argument(
+            '--prefix', action='store', dest='prefix',
+            help='Needs prefix label to name modules.',
         )
 
     def get_auth_tables(self):
@@ -63,13 +69,14 @@ class Command(InspectbCommand):
 
             # check if file exists
             if not os.path.exists(init_file_path):
-                open(init_file_path, 'w').close()
+                open(init_file_path, 'a').close()
+            
             modules_path[module] = dir_path
 
         self.modules_path= modules_path
 
-    def make_admin_file_code(self, table_name, app_label):
-        model_name = self._table2model(table_name)
+    def make_admin_file_code(self, table_name, app_label, table_prefix = ""):
+        model_name = self._table2model(table_name, table_prefix)
         file_code = ''
         try:
             file_code += 'from %s import admin\n' % (self.admin_module)
@@ -81,12 +88,12 @@ class Command(InspectbCommand):
             pass
         return file_code
 
-    def make_file(self, table_name, app_label):
+    def make_file(self, table_name, app_label, table_prefix = ""):
         '''
            makes different files(models, views, admin and forms)
            in the concerned directories
         '''
-        admin_file_code = self.make_admin_file_code(table_name, app_label)
+        admin_file_code = self.make_admin_file_code(table_name, app_label, table_prefix)
 
         model_file = ''
 
@@ -124,19 +131,20 @@ class Command(InspectbCommand):
         # 'table_name_filter' is a stealth option
         table_name_filter = options.get('table_name_filter')
 
-        def table2model(table_name):
-            return self._table2model(table_name)
+        def table2model(table_name, table_prefix = ""):
+            return self._table2model(table_name, table_prefix)
 
         def strip_prefix(s):
             return s[1:] if s.startswith("u'") else s
 
+        table_prefix = options.get('prefix')
         app_label = options.get('app')
         app_path = ("%s/%s") % (settings.BASE_DIR, app_label)
 
         self.make_dirs(app_path)
         models_init_file_code = ''
         models_init_file = ("%s/%s") % (self.modules_path['models'], self.init_file)
-        handle_model_init_file = open(models_init_file, 'w')
+        handle_model_init_file = open(models_init_file, 'a')
 
         models_to_pass = self.get_auth_tables()
 
@@ -152,16 +160,15 @@ class Command(InspectbCommand):
                 if table_name in models_to_pass:
                     continue
 
-                model_file = self.make_file(table_name, app_label)
+                model_file = self.make_file(table_name, app_label, table_prefix)
 
                 handle = open(model_file, 'w')
 
                 file_code = ''
 
-                models_init_file_code += "from %s.models.%s import %s\n" % (
-
-                                app_label, model_file.split("/")[-1].split(".")[0], table2model(table_name)
-                            )
+                models_init_file_code += "\nfrom %s.models.%s import %s" % (
+                    app_label, model_file.split("/")[-1].split(".")[0], table2model(table_name, table_prefix)
+                 )
 
 
                 file_code +=  'from %s import models\n' % self.db_module
@@ -191,7 +198,7 @@ class Command(InspectbCommand):
 
                 file_code +=  '\n'
                 file_code +=  '\n'
-                file_code +=  'class %s(models.Model):\n' % table2model(table_name)
+                file_code +=  'class %s(models.Model):\n' % table2model(table_name, table_prefix=table_prefix)
                 known_models.append(table2model(table_name))
                 used_column_names = []  # Holds column names used in the table so far
                 column_to_field_name = {}  # Maps column names to names of model fields
@@ -237,7 +244,14 @@ class Command(InspectbCommand):
                             continue
                         elif field_type == 'IntegerField(' and not connection.features.can_introspect_autofield:
                             comment_notes.append('AutoField?')
-
+                    
+                    # Auto Add for Created and Modified DATETIME
+                    if att_name == "created" or att_name == "modified":
+                        if att_name == "created":
+                            extra_params['auto_now_add'] = True
+                        else:
+                            extra_params['auto_now'] = True
+                    
                     # Add 'null' and 'blank', if the 'null_ok' flag was present in the
                     # table description.
                     if row[6]:  # If it's NULL...
