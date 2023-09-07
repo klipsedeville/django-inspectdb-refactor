@@ -282,7 +282,7 @@ class Command(InspectbCommand):
                     file_code +=  '    %s\n' % field_desc
                 is_view = any(info.name == table_name and info.type == 'v' for info in table_info)
                 is_partition = any(info.name == table_name and info.type == 'p' for info in table_info)
-                for meta_line in self.get_meta(table_name, constraints, column_to_field_name, is_view, is_partition):
+                for meta_line in self.get_meta(table_name, constraints, column_to_field_name, is_view, is_partition, comment=comment_notes):
                     file_code +=  "%s\n" % (meta_line)
 
                 handle.write(file_code)
